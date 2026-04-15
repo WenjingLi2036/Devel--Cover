@@ -65,10 +65,10 @@ line  err      %   true  false   branch
 Covered Subroutines
 -------------------
 
-Subroutine Count Location           
----------- ----- -------------------
-BEGIN          1 tests/empty_else:13
-BEGIN          1 tests/empty_else:14
-test_sub       1 tests/empty_else:23
+Subroutine Count  CC  SLOP Location           
+---------- ----- --- ----- -------------------
+BEGIN          1   1   0.0 tests/empty_else:13
+BEGIN          1   1   0.0 tests/empty_else:14
+test_sub       1   2   7.2 tests/empty_else:23
 
 

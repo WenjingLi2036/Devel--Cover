@@ -17,10 +17,14 @@ use lib "$FindBin::Bin/../lib", $FindBin::Bin,
   qw( ./lib ./blib/lib ./blib/arch );
 
 use File::Spec ();
-use Test::More import => [ qw( done_testing is like ok plan ) ];
+use Test::More import => [qw( done_testing is like ok plan unlike )];
 use Devel::Cover::Report::Html_crisp ();
-use Devel::Cover::Test::Showcase
-  qw( create_cover_db run_cover setup_lib_dir slurp );
+use Devel::Cover::Test::Showcase     qw(
+  create_cover_db
+  run_cover
+  setup_lib_dir
+  slurp
+);
 
 eval "require HTML::Entities; 1" or do {
   plan skip_all => "HTML::Entities not available";
@@ -114,21 +118,23 @@ sub test_render_index () {
 
   # Structural checks on the golden TT output - these will be
   # re-run against _render_index output once it replaces TT.
-  like $got, qr/<!DOCTYPE html>/,         "has doctype";
-  like $got, qr/<title>Coverage Summary/, "has summary title";
-  like $got, qr/class="file-table"/,      "has file table";
-  like $got, qr/class="worst-files"/,     "has worst files";
-  like $got, qr/class="dist-bar"/,        "has distribution bar";
-  like $got, qr/class="filter-bar"/,      "has filter bar";
-  like $got, qr/data-sort="risk"/,        "has risk column";
-  like $got, qr/Covered\/Calc\.pm/,       "Covered/Calc.pm present";
-  like $got, qr/Covered\/Full\.pm/,       "Covered/Full.pm present";
-  like $got, qr/Uncovered\/Calc\.pm/,     "Uncovered/Calc.pm present";
-  like $got, qr/Uncovered\/Full\.pm/,     "Uncovered/Full.pm present";
-  like $got, qr/untested-badge/,          "has untested badge";
-  like $got, qr/class="help-overlay"/,    "has help overlay";
-  like $got, qr/class="footer"/,          "has footer";
-  like $got, qr/Devel::Cover/,            "footer mentions Devel::Cover";
+  like $got,   qr/<!DOCTYPE html>/,         "has doctype";
+  like $got,   qr/<title>Coverage Summary/, "has summary title";
+  like $got,   qr/class="file-table"/,      "has file table";
+  like $got,   qr/class="worst-files"/,     "has worst files";
+  like $got,   qr/class="dist-bar"/,        "has distribution bar";
+  like $got,   qr/class="filter-bar"/,      "has filter bar";
+  like $got,   qr/data-sort="slop"/,        "has SLOP column";
+  unlike $got, qr/data-sort="risk"/,        "no risk column";
+  like $got,   qr/Top SLOP/,                "worst files heading";
+  like $got,   qr/Covered\/Calc\.pm/,       "Covered/Calc.pm present";
+  like $got,   qr/Covered\/Full\.pm/,       "Covered/Full.pm present";
+  like $got,   qr/Uncovered\/Calc\.pm/,     "Uncovered/Calc.pm present";
+  like $got,   qr/Uncovered\/Full\.pm/,     "Uncovered/Full.pm present";
+  like $got,   qr/untested-badge/,          "has untested badge";
+  like $got,   qr/class="help-overlay"/,    "has help overlay";
+  like $got,   qr/class="footer"/,          "has footer";
+  like $got,   qr/Devel::Cover/,            "footer mentions Devel::Cover";
 }
 
 sub test_render_file_page () {
@@ -150,6 +156,53 @@ sub test_render_file_page () {
   like $got, qr/class="src/,           "file: has source column";
 }
 
+sub test_tooltip_structure () {
+  my $got = $Golden{"coverage.html"};
+
+  # Unified glass tooltip system
+  like $got, qr/class="glass-tip slop-detail"/,
+    "tooltip: has glass-tip slop-detail";
+  like $got, qr/class="slop-tip-metrics"/, "tooltip: has metrics section";
+  like $got, qr/class="slop-tip-subs"/,    "tooltip: has subs section";
+  like $got, qr/class="slop-tip-total"/,   "tooltip: has total section";
+
+  # Colour coding inside tooltips
+  like $got, qr/slop-tip-metrics.*?class="c[0-3]"/s,
+    "tooltip: coverage value has colour class";
+  like $got, qr/slop-tip-subs.*?class="c[0-3]"/s,
+    "tooltip: sub entry has colour class";
+}
+
+sub test_glass_tooltips () {
+  my $index = $Golden{"coverage.html"};
+
+  # Single tooltip mechanism: tip-hover + glass-tip child
+  like $index,   qr/class="[^"]*tip-hover/, "glass: has tip-hover class";
+  like $index,   qr/class="glass-tip"/,     "glass: has glass-tip child";
+  unlike $index, qr/class="[^"]*has-tip/,   "glass: no has-tip class";
+  unlike $index, qr/data-tip="/,            "glass: no data-tip attributes";
+
+  # File page SLOP badge uses tip-hover
+  my ($covered) = grep /Covered-Calc/, keys %Golden;
+  my $file_page = $Golden{$covered};
+  like $file_page,   qr/stat-slop tip-hover/, "glass: SLOP badge has tip-hover";
+  unlike $file_page, qr/slop-hover/,          "glass: no slop-hover class";
+}
+
+sub test_dir_row_slop () {
+  my $got = $Golden{"coverage.html"};
+  like $got, qr/dir-header.*?tip-hover.*?slop-detail/s,
+    "dir row: has SLOP tooltip";
+}
+
+sub test_module_slop_badge () {
+  my $got = $Golden{"coverage.html"};
+  like $got, qr/stat-badge.*?slop\b/s,
+    "header: has SLOP stat badge";
+  like $got, qr/slop.*?help-toggle/s,
+    "header: SLOP badge before help button";
+}
+
 sub test_render_untested_page () {
   my ($untested) = grep /Uncovered-Calc/, keys %Golden;
   ok defined $untested, "golden untested file page exists";
@@ -166,6 +219,10 @@ sub main () {
   test_render_layout;
   test_render_index;
   test_render_file_page;
+  test_tooltip_structure;
+  test_glass_tooltips;
+  test_dir_row_slop;
+  test_module_slop_badge;
   test_render_untested_page;
   done_testing;
 }

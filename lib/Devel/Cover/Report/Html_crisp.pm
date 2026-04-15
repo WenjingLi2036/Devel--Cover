@@ -78,21 +78,40 @@ HTML
 }
 
 sub untested_badge () {
-  my $tip = $R{have_ppi} ? "" : " has-tip";
-  my $data
-    = $R{have_ppi} ? "" : ' data-tip="Install PPI for coverage estimates"';
-  qq(<span class="untested-badge$tip"$data>untested</span>)
+  my $cls = $R{have_ppi} ? "" : " tip-hover";
+  my $tip = $R{have_ppi} ? "" : glass_tip("Install PPI for coverage estimates");
+  qq(<span class="untested-badge$cls">untested $tip</span>)
 }
 
-sub risk_tip ($f) {
-  <<HTML
-<table class="risk-tip">
-<tr><td>Branch errors</td><td>$f->{risk_branch}</td></tr>
-<tr><td>Condition errors</td><td>$f->{risk_cond}</td></tr>
-<tr><td>Coverage gap</td><td>$f->{risk_gap}%</td></tr>
-<tr class="risk-total"><td>Risk</td><td>$f->{risk}</td></tr>
-</table>
+sub glass_tip ($text) {
+  qq(<span class="glass-tip">$text</span>)
+}
+
+sub slop_tip ($f) {
+  my $cov_cls = class($f->{file_cov}, $f->{file_cov} < 100, "total");
+  my $o       = <<HTML;
+<div class="glass-tip slop-detail">
+<dl class="slop-tip-metrics">
+<dt>CC</dt><dd>$f->{file_cc}</dd>
+<dt>Cov</dt><dd class="$cov_cls">$f->{file_cov}%</dd>
+</dl>
 HTML
+  if ($f->{worst_subs}->@*) {
+    $o .= qq(<dl class="slop-tip-subs">\n);
+    for ($f->{worst_subs}->@*) {
+      my $cls = slop_class($_->{slop});
+      $o .= qq(<dt>$_->{name}</dt><dd class="$cls">$_->{crap}</dd>\n);
+    }
+    $o .= "</dl>\n";
+  }
+  $o .= <<HTML;
+<div class="slop-tip-total">
+<span class="slop-tip-label">CRAP</span>
+<span class="slop-tip-value">$f->{file_crap}</span>
+</div>
+</div>
+HTML
+  $o
 }
 
 sub cov_bar ($pc, $uncompiled) {
@@ -108,9 +127,9 @@ sub cov_bar ($pc, $uncompiled) {
 sub cov_cell ($s, $uncompiled, $data_value = undef) {
   my $dv = $data_value // ($s->{pc} eq "n/a" ? -1 : $s->{pc});
   <<HTML
-<td class="$s->{class} has-tip"
-  data-value="$dv" data-tip="$s->{covered} / $s->{total}">
-$s->{pc} @{[ cov_bar($s->{pc}, $uncompiled) ]}</td>
+<td class="$s->{class} tip-hover" data-value="$dv">
+$s->{pc} @{[ cov_bar($s->{pc}, $uncompiled) ]}
+@{[ glass_tip("$s->{covered} / $s->{total}") ]}</td>
 HTML
 }
 
@@ -132,30 +151,32 @@ HTML
   }
   $o .= cov_cell($f->{total}, $f->{uncompiled}, $f->{total_sort});
   $o .= <<HTML;
-<td data-value="$f->{risk}" class="risk-hover">
-$f->{risk} @{[ risk_tip($f) ]}</td>
+<td data-value="$f->{file_slop}" class="tip-hover">
+$f->{file_slop} @{[ slop_tip($f) ]}</td>
 </tr>
 HTML
   $o
 }
 
 sub render_worst_files ($worst) {
-  return "" unless @$worst && $worst->[0]{risk} > 0;
-  my $o = qq(<div class="worst-files">\n<h2>Highest risk</h2>\n)
-    . qq(<div class="worst-list">\n);
+  return "" unless @$worst && $worst->[0]{file_slop} > 0;
+  my $o = qq(<div class="worst-files">\n<h2>Top SLOP</h2>\n);
   for my $f (@$worst) {
-    next if $f->{risk} == 0;
+    next if $f->{file_slop} == 0;
     my $cls = $f->{uncompiled} ? "untested-worst" : $f->{total}{class};
     my $name
       = $f->{exists} ? qq(<a href="$f->{link}">$f->{short}</a>) : $f->{short};
     my $badge = $f->{uncompiled} ? untested_badge() . "\n" : "";
+    my $tip   = slop_tip($f);
+    my $slop  = $f->{file_slop};
+
     $o .= <<HTML;
 <div class="worst-item $cls">
-  $name $badge<strong class="risk-hover">$f->{risk} @{[ risk_tip($f) ]}</strong>
+  $name $badge<strong class="tip-hover">$slop $tip</strong>
 </div>
 HTML
   }
-  $o .= "</div>\n</div>\n";
+  $o .= "</div>\n";
   $o
 }
 
@@ -164,18 +185,18 @@ sub render_dist_bar ($dist) {
   return "" unless $dt > 0;
   my $o = qq(<div class="dist-bar">\n);
   for my $seg (
-    [ c0       => "--cov-none-border", $dist->{tip_c0} ],
-    [ c1       => "--cov-low-border",  $dist->{tip_c1} ],
-    [ c2       => "--cov-good-border", $dist->{tip_c2} ],
-    [ c3       => "--cov-full-border", $dist->{tip_c3} ],
-    [ untested => "--untested-bar",    $dist->{tip_untested} ],
+    [c0       => "--cov-none-border", $dist->{tip_c0}],
+    [c1       => "--cov-low-border",  $dist->{tip_c1}],
+    [c2       => "--cov-good-border", $dist->{tip_c2}],
+    [c3       => "--cov-full-border", $dist->{tip_c3}],
+    [untested => "--untested-bar",    $dist->{tip_untested}],
   ) {
     my ($key, $var, $tip) = @$seg;
     next unless $dist->{$key};
     my $w = $dist->{$key} / $dt * 100;
     $o .= <<HTML;
-<div class="dist-bar-seg has-tip" style="width:${w}%; background:var($var)"
-  data-tip="$tip"></div>
+<div class="dist-bar-seg tip-hover" style="width:${w}%; background:var($var)">
+@{[ glass_tip($tip) ]}</div>
 HTML
   }
   $o .= "</div>\n";
@@ -199,10 +220,10 @@ sub stat_badge ($c, $s) {
   my $pct = $s->{pc};
   my $suf = $pct ne "n/a" ? "%" : "";
   <<HTML
-<span class="stat-badge $s->{class} has-tip"
-  data-tip="$s->{covered} / $s->{total}">
+<span class="stat-badge $s->{class} tip-hover">
 <span class="badge-label">@{[ crit_name($c) ]} $pct$suf</span>
-@{[ cov_bar($pct, 0) ]}</span>
+@{[ cov_bar($pct, 0) ]}
+@{[ glass_tip("$s->{covered} / $s->{total}") ]}</span>
 HTML
 }
 
@@ -210,8 +231,8 @@ sub render_index ($file_data, $total, $dist) {
   my @groups = build_dir_groups($file_data);
   my @worst
     = @$file_data
-    ? (sort { $b->{risk} <=> $a->{risk} } @$file_data)
-    [ 0 .. ($#$file_data > 4 ? 4 : $#$file_data) ]
+    ? (sort { $b->{file_slop} <=> $a->{file_slop} } @$file_data)
+    [0 .. ($#$file_data > 4 ? 4 : $#$file_data)]
     : ();
 
   my $o = <<HTML;
@@ -227,6 +248,18 @@ HTML
   }
   my $tt = $total->{total};
   $o .= stat_badge("total", $tt) if ($tt->{pc} // "n/a") ne "n/a";
+
+  my $ms = $R{db}->summary("Total", "slop");
+  if ($ms && defined $ms->{module_slop}) {
+    my $sv  = sprintf "%.1f", $ms->{module_slop};
+    my $tip = sprintf "CC %d &middot; cov %.0f%% &middot; CRAP %.1f",
+      $ms->{module_cc}, $ms->{module_cov}, $ms->{module_crap};
+    $o .= <<HTML;
+<span class="stat-badge stat-slop tip-hover">
+<span class="badge-label">slop $sv</span>
+@{[ glass_tip($tip) ]}</span>
+HTML
+  }
 
   $o .= <<HTML;
 <button class="help-toggle" aria-label="Help">?</button>
@@ -248,9 +281,10 @@ Toggle "Hide 100% covered" to focus on incomplete files.</dd>
 <dt>Grouping</dt>
 <dd>Toggle "Group by directory" to organise files into
 collapsible groups. Click a directory row to collapse it.</dd>
-<dt>Risk</dt>
-<dd>Hover the risk column for a breakdown: branch errors +
-condition errors + coverage gap.</dd>
+<dt>SLOP</dt>
+<dd>Scaled Likelihood Of Problems - a log-scaled CRAP score
+compressed to a 0-100 range. Hover for a breakdown: file CC,
+combined coverage, worst subs, and the raw CRAP score.</dd>
 <dt>Tooltips</dt>
 <dd>Hover any badge or coverage cell for covered/total counts.</dd>
 </dl>
@@ -286,7 +320,7 @@ HTML
 HTML
 
   my $ncrit  = $R{criteria}->@*;
-  my $ncols  = $ncrit + 2;       # criteria + total + risk
+  my $ncols  = $ncrit + 2;       # criteria + total + slop
   my $crit_w = 70 / $ncols;
   $o
     .= qq(<table class="file-table">\n<colgroup>\n)
@@ -300,7 +334,7 @@ HTML
   }
   $o .= <<HTML;
 <th data-sort="total">@{[ crit_name('total') ]}</th>
-<th data-sort="risk">risk</th>
+<th data-sort="slop">SLOP</th>
 </tr>
 </thead>
 <tbody>
@@ -310,12 +344,14 @@ HTML
     $o .= qq(<tr class="dir-header" data-dir="$g->{dir}">\n)
       . "<td>$g->{dir}</td>\n";
     for my $c ($R{criteria}->@*) {
-      $o .= "<td></td>\n";
+      $o .= cov_cell($g->{criteria}{$c}, 0);
     }
-    $o
-      .= qq(<td class="$g->{class}">\n$g->{pc}\n)
-      . cov_bar($g->{pc} // "n/a", 0)
-      . "</td>\n<td></td>\n</tr>\n";
+    $o .= cov_cell($g->{total}, 0);
+    $o .= <<HTML;
+<td data-value="$g->{file_slop}" class="tip-hover">
+$g->{file_slop} @{[ slop_tip($g) ]}</td>
+</tr>
+HTML
     $o .= file_row($_, $g->{dir}) for $g->{files}->@*;
   }
   $o .= "</tbody>\n</table>\n\n</div>\n";
@@ -327,16 +363,27 @@ HTML
   )
 }
 
+sub slop_class ($slop) {
+  return "" unless defined $slop;
+  $slop < 16 ? "c3" : $slop < 34 ? "c2" : $slop < 41 ? "c1" : "c0"
+}
+
 sub render_line_detail ($line) {
   my $o = qq(<tr class="line-detail"><td colspan="4">\n);
 
   if ($line->{subroutines}) {
     for my $s ($line->{subroutines}->@*) {
-      my $status = $s->{covered} ? "called" : "not called";
+      my $status  = $s->{covered} ? "called" : "not called";
+      my $cc_info = "";
+      if (defined $s->{cc}) {
+        my $cls  = slop_class($s->{slop});
+        my $slop = sprintf "%.1f", $s->{slop} // 0;
+        $cc_info = qq( <span class="$cls">CC=$s->{cc} SLOP=$slop</span>);
+      }
       $o .= <<HTML;
 <div class="detail">
 <span class="detail-heading">Subroutine</span>
-<span class="$s->{class}">$s->{name}: $status</span>
+<span class="$s->{class}">$s->{name}: $status$cc_info</span>
 </div>
 HTML
     }
@@ -383,7 +430,7 @@ HTML
       if ($tt->{legend} && $tt->{legend}->@*) {
         $o .= qq(<div class="tt-legend">\n);
         for my $item ($tt->{legend}->@*) {
-          $o .= qq(<div class="tt-legend-item">)
+          $o .= '<div class="tt-legend-item">'
             . qq(<strong>$item->{letter}</strong> = $item->{label}</div>\n);
         }
         $o .= "</div>\n";
@@ -480,39 +527,38 @@ HTML
     my $s = $total->{$c};
     if ($fd->{uncompiled}) {
       $o .= <<HTML;
-<span class="stat-badge untested-stat has-tip"
-  data-tip="$c: 0" data-criterion="$c">
-@{[ crit_name($c) ]} 0.0%</span>
+<span class="stat-badge untested-stat tip-hover" data-criterion="$c">
+@{[ crit_name($c) ]} 0.0% @{[ glass_tip("$c: 0") ]}</span>
 HTML
     } else {
       my $cls = $s->{class} || "stat-na";
       my $pct = $s->{pc} . ($s->{pc} ne "n/a" ? "%" : "");
       $o .= <<HTML;
-<span class="stat-badge $cls has-tip" data-tip="$s->{covered} / $s->{total}"
-  data-criterion="$c">
-@{[ crit_name($c) ]} $pct</span>
+<span class="stat-badge $cls tip-hover" data-criterion="$c">
+@{[ crit_name($c) ]} $pct @{[ glass_tip("$s->{covered} / $s->{total}") ]}</span>
 HTML
     }
   }
 
   if ($fd->{uncompiled}) {
     $o .= <<HTML;
-<span class="stat-badge untested-stat has-tip" data-tip="total: 0">
-@{[ crit_name("total") ]} 0.0%</span>
-<span class="stat-badge stat-risk has-tip" data-tip="risk: 0">risk 0</span>
+<span class="stat-badge untested-stat tip-hover">
+@{[ crit_name("total") ]} 0.0% @{[ glass_tip("total: 0") ]}</span>
+<span class="stat-badge stat-slop tip-hover">
+SLOP 0 @{[ glass_tip("SLOP: 0") ]}</span>
 HTML
   } else {
     my $tt = $total->{total};
     if (($tt->{pc} // "n/a") ne "n/a") {
       $o .= <<HTML;
-<span class="stat-badge $tt->{class} has-tip"
-  data-tip="$tt->{covered} / $tt->{total}">
-@{[ crit_name("total") ]} $tt->{pc}%</span>
+<span class="stat-badge $tt->{class} tip-hover">
+@{[ crit_name("total") ]} $tt->{pc}%
+@{[ glass_tip("$tt->{covered} / $tt->{total}") ]}</span>
 HTML
     }
     $o .= <<HTML;
-<span class="stat-badge stat-risk risk-hover has-tip" data-tip="risk score">
-risk $fd->{risk} @{[ risk_tip($fd) ]}</span>
+<span class="stat-badge stat-slop tip-hover">
+SLOP $fd->{file_slop} @{[ slop_tip($fd) ]}</span>
 HTML
   }
 
@@ -538,7 +584,7 @@ condition, or subroutine detail.</dd>
 <dd>The strip on the right shows coverage at a glance. Click to
 jump to that line.</dd>
 <dt>Tooltips</dt>
-<dd>Hover badges for covered/total counts. Hover risk for a
+<dd>Hover badges for covered/total counts. Hover SLOP for a
 breakdown.</dd>
 <dt>Keyboard</dt>
 <dd><kbd>j</kbd> / <kbd>k</kbd> next/prev uncovered line
@@ -606,13 +652,14 @@ sub oclass ($o, $criterion) {
 }
 
 sub fmt_pc ($pc) {
-  defined $pc ? (sprintf "%5.2f", $pc) =~ s/.\z//r =~ s/^\s+//r : "n/a"
+  defined $pc
+    ? (sprintf "%5.2f", $pc) =~ s/.\z//r =~ s/^\s+//r =~ s/^100\.0$/100/r
+    : "n/a"
 }
 
-sub get_summary ($file, $criterion) {
-  my $part = $R{db}->summary($file);
+sub _format_criterion ($part, $criterion) {
   return { pc => "n/a", class => "na", covered => 0, total => 0, error => 0 }
-    unless exists $part->{$criterion};
+    unless $part && exists $part->{$criterion};
   my $c = $part->{$criterion};
   {
     pc      => fmt_pc($c->{percentage}),
@@ -623,16 +670,32 @@ sub get_summary ($file, $criterion) {
   }
 }
 
-sub add_risk ($f, $risk_parts) {
-  my $pc   = $f->{total_pc};
-  my $gap  = 100 - ($pc eq "n/a" ? 0 : $pc);
-  my $berr = $risk_parts->{branch}    || 0;
-  my $cerr = $risk_parts->{condition} || 0;
-  $f->{risk}        = int($berr + $cerr + $gap);
-  $f->{risk_branch} = $berr;
-  $f->{risk_cond}   = $cerr;
-  $f->{risk_gap}    = sprintf "%.0f", $gap;
-  $f->{risk_gap_pc} = $pc;
+sub get_summary ($file, $criterion) {
+  _format_criterion($R{db}->summary($file), $criterion)
+}
+
+sub _apply_slop ($f, $slop_data) {
+  if ($slop_data && defined $slop_data->{file_crap}) {
+    $f->{file_crap} = sprintf "%.1f", $slop_data->{file_crap};
+    $f->{file_slop} = sprintf "%.1f", $slop_data->{file_slop} // 0;
+    $f->{file_cc}   = $slop_data->{file_cc};
+    $f->{file_cov}  = sprintf "%.0f", $slop_data->{file_cov};
+    my @sorted = sort { $b->{crap} <=> $a->{crap} } grep defined $_->{crap},
+      @{ $slop_data->{subs} || [] };
+    $f->{worst_subs} = [
+      map { {
+        name => $_->{name},
+        crap => sprintf("%.1f", $_->{crap}),
+        slop => $_->{slop},
+      } } @sorted[0 .. ($#sorted > 2 ? 2 : $#sorted)]
+    ];
+  } else {
+    $f->{file_crap}  = 0;
+    $f->{file_slop}  = 0;
+    $f->{file_cc}    = 0;
+    $f->{file_cov}   = 0;
+    $f->{worst_subs} = [];
+  }
 }
 
 sub build_one_file ($file) {
@@ -652,14 +715,11 @@ sub build_one_file ($file) {
     criteria   => {},
   );
 
-  my %risk_parts;
-
   for my $c ($R{showing}->@*) {
     my $s = get_summary($file, $c);
     $s->{class}      = "c0"  if $uncompiled && $s->{pc} eq "n/a";
     $s->{pc}         = "0.0" if $uncompiled && $s->{pc} eq "n/a";
     $f{criteria}{$c} = $s;
-    $risk_parts{$c}  = $s->{error} || 0 if $c =~ /^(?:branch|condition)$/;
   }
   my $total = get_summary($file, "total");
   if ($uncompiled && $total->{pc} eq "n/a") {
@@ -670,7 +730,7 @@ sub build_one_file ($file) {
   my $pc = $total->{pc} // "n/a";
   $f{total_pc}   = $pc;
   $f{total_sort} = $pc eq "n/a" ? -1 : $pc;
-  add_risk(\%f, \%risk_parts);
+  _apply_slop(\%f, $R{db}->summary($file, "slop"));
   \%f
 }
 
@@ -680,33 +740,33 @@ sub build_file_data () {
     my $f = build_one_file($file);
     push @file_data, $f if $f;
   } sort {
-         ($b->{risk} || 0) <=> ($a->{risk} || 0)
+         ($b->{file_slop} || 0)   <=> ($a->{file_slop} || 0)
       || ($a->{total_sort} // -1) <=> ($b->{total_sort} // -1)
       || $a->{name} cmp $b->{name}
   } @file_data
 }
 
+sub get_dir_summary ($dir, $criterion) {
+  _format_criterion($R{db}->dir_summary($dir), $criterion)
+}
+
 sub build_dir_groups ($file_data) {
-  my (%dirs, %dir_stats);
-  for my $f (@$file_data) {
-    my $d = $f->{dir};
-    push $dirs{$d}->@*, $f;
-    my $s = $dir_stats{$d} ||= { covered => 0, total => 0 };
-    my $t = $f->{total};
-    $s->{covered} += $t->{covered} || 0;
-    $s->{total}   += $t->{total}   || 0;
-  } map {
-    my $s = $dir_stats{$_};
-    my $pc
-      = $s->{total}
-      ? sprintf("%.1f", 100 * $s->{covered} / $s->{total})
-      : "n/a";
-    {
-      dir   => $_ || "(root)",
-      pc    => $pc,
-      class => class($pc, ($pc eq "n/a" || $pc < 100) ? 1 : 0, "total"),
-      files => $dirs{$_},
-    }
+  my %dirs;
+  push $dirs{ $_->{dir} }->@*, $_ for @$file_data;
+  map {
+    my $dir = $_;
+    my $g   = {
+      dir      => $dir || "(root)",
+      dir_key  => $dir,
+      total    => get_dir_summary($dir, "total"),
+      criteria =>
+        { map { $_ => get_dir_summary($dir, $_) } $R{criteria}->@* },
+      files => $dirs{$dir},
+    };
+    $g->{pc}    = $g->{total}{pc};
+    $g->{class} = $g->{total}{class};
+    _apply_slop($g, $R{db}->dir_summary($dir, "slop"));
+    $g;
   } sort keys %dirs
 }
 
@@ -714,10 +774,14 @@ sub line_subroutines ($f, $n) {
   my $subs = $f->subroutine or return;
   my $loc  = $subs->location($n);
   return unless $loc && @$loc;
+  my $cl = $R{slop_subs} || {};
   map { {
     name    => encode_entities($_->name),
     covered => $_->covered,
     class   => oclass($_, "subroutine"),
+    cc      => ($cl->{ "$n\0" . $_->name } // {})->{cc},
+    crap    => ($cl->{ "$n\0" . $_->name } // {})->{crap},
+    slop    => ($cl->{ "$n\0" . $_->name } // {})->{slop},
   } } @$loc
 }
 
@@ -766,7 +830,7 @@ sub line_truth_tables ($f, $n) {
       headers    => \@headers,
       legend     => [
         map { {
-          letter => $headers[$_], label => encode_entities($labels[$_]), } }
+          letter => $headers[$_], label => encode_entities($labels[$_]) } }
           0 .. $#labels
       ],
     }
@@ -944,6 +1008,7 @@ sub generate_file_pages ($outdir, $file_data) {
     my $fd = $file_data->[$idx];
     next unless $fd->{exists};
     my $file = $fd->{name};
+    $R{slop_subs} = $R{db}->slop_sub_lookup($file);
     my $lines
       = $fd->{uncompiled}
       ? build_untested_source_lines($file)
@@ -955,13 +1020,14 @@ sub generate_file_pages ($outdir, $file_data) {
       )
       : totals_for($file);
 
-    my $prev = $idx > 0            ? $file_data->[ $idx - 1 ] : undef;
-    my $next = $idx < $#$file_data ? $file_data->[ $idx + 1 ] : undef;
+    my $prev = $idx > 0            ? $file_data->[$idx - 1] : undef;
+    my $next = $idx < $#$file_data ? $file_data->[$idx + 1] : undef;
 
     write_file(
       "$outdir/$fd->{link}",
       render_file_page($fd, $lines, \%file_total, $prev, $next),
     );
+    delete $R{slop_subs};
   }
 }
 
@@ -977,10 +1043,9 @@ sub report ($pkg, $db, $options) {
     os       => $^O,
     options  => $options,
     version  => $VERSION,
-    showing  => [ grep $options->{show}{$_}, $db->criteria ],
-    criteria =>
-      [ grep $_ ne "time", grep $options->{show}{$_}, $db->criteria ],
-    headers => [
+    showing  => [grep $options->{show}{$_}, $db->criteria],
+    criteria => [grep $_ ne "time", grep $options->{show}{$_}, $db->criteria],
+    headers  => [
       map  { ($db->criteria_short)[$_] }
       grep { $options->{show}{ ($db->criteria)[$_] } }
         (0 .. $db->criteria - 1)
@@ -1081,6 +1146,7 @@ $Assets{css} = $Crisp_base_css . <<'CSS';
   .name-full  { display: none !important; }
   .name-short { display: inline !important; }
   .stat-badge { width: 140px; }
+  .stat-slop  { width: auto; }
 }
 
 /* Narrow: stack pills vertically */
@@ -1098,10 +1164,11 @@ $Assets{css} = $Crisp_base_css . <<'CSS';
   border-color: var(--border);
   color: var(--fg-muted);
 }
-.stat-risk {
+.stat-slop {
   background: var(--prefix-bg);
   border-color: var(--prefix-border);
   color: var(--fg);
+  width: auto;
 }
 .stat-badge[data-criterion] {
   cursor: pointer;
@@ -1220,6 +1287,11 @@ $Assets{css} = $Crisp_base_css . <<'CSS';
 /* Worst files */
 
 .worst-files {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  overflow: hidden;
   margin-bottom: 24px;
 }
 
@@ -1228,15 +1300,8 @@ $Assets{css} = $Crisp_base_css . <<'CSS';
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  margin: 0 0 8px 0;
+  margin: 0;
   color: var(--fg-muted);
-}
-
-.worst-list {
-  display: flex;
-  gap: 8px;
-  flex-wrap: nowrap;
-  overflow: hidden;
 }
 
 .worst-item {
@@ -1336,47 +1401,50 @@ $Assets{css} = $Crisp_base_css . <<'CSS';
 .file-table .sort-asc::after { content: " \25b2"; }
 .file-table .sort-desc::after { content: " \25bc"; }
 
-.risk-hover {
-  position: relative;
-  cursor: default;
-}
-.risk-hover:hover { z-index: 30; }
-.risk-tip {
-  display: none;
-  position: absolute;
-  bottom: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 6px 10px;
-  border-radius: 4px;
-  font-size: 13px;
+/* SLOP detail tooltip overrides */
+.glass-tip.slop-detail {
+  padding: 8px 12px;
   font-weight: normal;
-  white-space: nowrap;
-  background: var(--tip-bg);
-  color: var(--tip-fg);
-  z-index: 30;
-  border-collapse: collapse;
-  pointer-events: none;
 }
-.risk-hover:hover .risk-tip { display: table; }
-.risk-tip td {
-  padding: 1px 6px;
+
+.slop-detail dl {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 1px 12px;
+  margin: 0;
   font-variant-numeric: tabular-nums;
 }
-.risk-tip td:first-child { text-align: left; }
-.risk-tip td:last-child { text-align: right; }
-.risk-tip .risk-total td {
-  border-top: 1px solid var(--tip-fg);
-  font-weight: 600;
+.slop-detail dt { text-align: left; }
+.slop-detail dd { text-align: right; margin: 0; }
+
+.slop-tip-subs {
+  border-top: 1px solid var(--tip-glass-sep);
+  margin-top: 4px !important;
+  padding-top: 4px;
 }
 
-.header .has-tip::after {
-  bottom: auto;
-  top: 100%;
+.slop-tip-total {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--tip-glass-sep);
   margin-top: 4px;
+  padding-top: 4px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
-.header .risk-tip {
+.slop-detail .c0,
+.slop-detail .c1,
+.slop-detail .c2,
+.slop-detail .c3 { background: transparent; }
+.slop-detail .c0 { color: var(--tip-c0); }
+.slop-detail .c1 { color: var(--tip-c1); }
+.slop-detail .c2 { color: var(--tip-c2); }
+.slop-detail .c3 { color: var(--tip-c3); }
+
+/* Header: tooltips below */
+.header .glass-tip {
   bottom: auto;
   top: 100%;
   margin-top: 4px;
@@ -1387,8 +1455,13 @@ $Assets{css} = $Crisp_base_css . <<'CSS';
   user-select: none;
 }
 
-.dir-header td:first-child {
+.dir-header td {
+  background: var(--bg-alt);
+  border-top: 6px solid var(--bg);
   font-weight: 600;
+}
+
+.dir-header td:first-child {
   color: var(--fg-muted);
 }
 
@@ -1408,9 +1481,11 @@ $Assets{css} = $Crisp_base_css . <<'CSS';
 /* Untested files */
 
 tr.untested td { opacity: 0.7; }
-tr.untested td .has-tip::after { opacity: 0; }
+tr.untested td .glass-tip { display: none !important; }
 tr.untested td:hover { opacity: 1; }
-tr.untested td:hover .has-tip:hover::after { opacity: 1; }
+tr.untested td:hover .tip-hover:hover > .glass-tip {
+  display: block !important;
+}
 
 .cov-bar-untested {
   display: inline-block;
@@ -1726,7 +1801,8 @@ $Assets{js} = $Crisp_theme_js . <<'JS';
     var groupToggle = document.querySelector(".group-toggle");
 
     /* Read persisted state */
-    var sortCol = rget("sort-col", "risk");
+    var sortCol = rget("sort-col", "slop");
+    if (sortCol === "crap") { sortCol = "slop"; rset("sort-col", "slop"); }
     var sortDir = rget("sort-dir", "desc");
 
     var defaultGrouped = fileCount > 30;
